@@ -1,0 +1,10 @@
+package com.sumo.auth.service.dto.existingcode;
+
+import lombok.Builder;
+import lombok.Data;
+
+@Data
+@Builder
+public class TokenDto {
+    private String token;
+}

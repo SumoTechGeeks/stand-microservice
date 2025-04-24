@@ -1,0 +1,186 @@
+services:
+  postgres:
+    image: postgres:latest
+    container_name: postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: 55
+      POSTGRES_DB: microservice
+      EUREKA.CLIENT.SERVICEURL.DEFAULTZONE: http://eureka-server:8761/eureka
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - java_mysql_network
+
+  zookeeper:
+    image: docker.io/bitnami/zookeeper:3
+    container_name: zookeeper
+    ports:
+      - "2181:2181"
+    environment:
+      ALLOW_ANONYMOUS_LOGIN: "yes"
+      EUREKA.CLIENT.SERVICEURL.DEFAULTZONE: http://eureka-server:8761/eureka
+    volumes:
+      - zookeeper_data:/bitnami
+    healthcheck:
+      test: ["CMD", "echo", "ruok", "|", "nc", "localhost", "2181"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+    networks:
+      - java_mysql_network
+
+  kafka:
+    image: docker.io/bitnami/kafka:2-debian-10
+    container_name: kafka
+    ports:
+      - "9092:9092"
+    expose:
+      - "9093"
+    environment:
+      KAFKA_CFG_ZOOKEEPER_CONNECT: zookeeper:2181
+      ALLOW_PLAINTEXT_LISTENER: "yes"
+      KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT
+      KAFKA_CFG_LISTENERS: PLAINTEXT://:9092
+      KAFKA_CFG_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092
+      EUREKA.CLIENT.SERVICEURL.DEFAULTZONE: http://eureka-server:8761/eureka
+    volumes:
+      - kafka_data:/bitnami
+    healthcheck:
+      test: [ "CMD", "echo", "ruok", "|", "nc", "localhost", "9092" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    depends_on:
+      zookeeper:
+        condition: service_healthy
+    networks:
+      - java_mysql_network
+
+  eureka-server:
+    image: saleem007rasheed/eureka-server:latest
+#    i tried changing image, but  that also didn't work
+#    image: docker.io/cloudready/spring-cloud-eureka-server:1.0.1-servicelabel-SNAPSHOT
+    container_name: eureka-server
+    ports:
+      - "8761:8761"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8761/actuator/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    environment:
+      EUREKA_CLIENT_REGISTERWITHEUREKA: "false"
+      EUREKA_CLIENT_FETCHREGISTRY: "false"
+    networks:
+      - java_mysql_network
+
+  config-server:
+    image: saleem007rasheed/config-server:latest
+    container_name: config-server
+    ports:
+      - "8888:8888"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8888/actuator/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    depends_on:
+      - eureka-server
+    environment:
+      EUREKA.CLIENT.SERVICEURL.DEFAULTZONE: http://eureka-server:8761/eureka
+    networks:
+      - java_mysql_network
+
+  gateway:
+    image: saleem007rasheed/gateway:latest
+    container_name: gateway
+    ports:
+      - "8080:8080"
+    depends_on:
+      - config-server
+    networks:
+      - java_mysql_network
+    environment:
+      EUREKA.CLIENT.SERVICEURL.DEFAULTZONE: http://user:user_pass@eureka-standalone:8761/eureka/
+
+#  auth-service:
+#    image: saleem007rasheed/auth-service:latest
+#    container_name: auth-service
+#    depends_on:
+#      config-server:
+#        condition: service_started
+#      eureka-server:
+#        condition: service_started
+#      postgres:
+#        condition: service_started
+#    networks:
+#      - java_mysql_network
+#
+#  user-service:
+#    image: saleem007rasheed/user-service:latest
+#    container_name: user-service
+#    depends_on:
+#      config-server:
+#        condition: service_started
+#      eureka-server:
+#        condition: service_started
+#      postgres:
+#        condition: service_started
+#    networks:
+#      - java_mysql_network
+#
+#  file-storage:
+#    image: saleem007rasheed/file-storage:latest
+#    container_name: file-storage
+#    depends_on:
+#      config-server:
+#        condition: service_started
+#      eureka-server:
+#        condition: service_started
+#    networks:
+#      - java_mysql_network
+#
+#  job-service:
+#    image: saleem007rasheed/job-service:latest
+#    container_name: job-service
+#    depends_on:
+#      config-server:
+#        condition: service_started
+#      eureka-server:
+#        condition: service_started
+#    networks:
+#      - java_mysql_network
+#
+#  notification-service:
+#    image: saleem007rasheed/notification-service:latest
+#    container_name: notification-service
+#    depends_on:
+#      config-server:
+#        condition: service_started
+#      eureka-server:
+#        condition: service_started
+#      kafka:
+#        condition: service_started
+#    networks:
+#      - java_mysql_network
+
+volumes:
+  postgres_data:
+  kafka_data:
+  zookeeper_data:
+
+networks:
+  java_mysql_network:
+    driver: bridge
